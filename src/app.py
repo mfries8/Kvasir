@@ -279,31 +279,62 @@ else:
             )
             
             # Generate the histogram
-            fig = px.histogram(
-                plot_df,
-                x="Total Reflectivity (Linear Z)",
-                color="Meteorite Name",
-                nbins=nbins,
-                log_x=use_log,
-                title=f"Total Linear Reflectivity Histogram ({mode})",
-                labels={
-                    "Total Reflectivity (Linear Z)": "Total Reflectivity (Linear Z, mm⁶/m³)",
-                    "count": "Number of Falls"
-                },
-                template="plotly_dark",
-                # Interactive hover options
-                hover_data={
-                    "Meteorite Name": True,
-                    "State/Province": True,
-                    "Date": True,
-                    "Time": True,
-                    "Category": True,
-                    "Total Reflectivity (Linear Z)": ":.4e"
-                }
-            )
+            import math
+            if use_log:
+                # Pre-calculate log10 values in Python to avoid Plotly's log(0) = -inf rendering bug
+                plot_df["Log10 Reflectivity"] = plot_df["Total Reflectivity (Linear Z)"].apply(
+                    lambda val: math.log10(val) if val > 0 else 0.0
+                )
+                fig = px.histogram(
+                    plot_df,
+                    x="Log10 Reflectivity",
+                    color="Meteorite Name",
+                    nbins=nbins,
+                    title=f"Total Linear Reflectivity Histogram ({mode})",
+                    labels={
+                        "Log10 Reflectivity": "Total Reflectivity (Z, mm⁶/m³)",
+                        "count": "Number of Falls"
+                    },
+                    template="plotly_dark",
+                    hover_data={
+                        "Meteorite Name": True,
+                        "State/Province": True,
+                        "Date": True,
+                        "Time": True,
+                        "Category": True,
+                        "Total Reflectivity (Linear Z)": ":.4e"
+                    }
+                )
+                # Map the linear log10 axis to readable tick marks
+                fig.update_xaxes(
+                    tickvals=[0, 1, 2, 3, 4, 5, 6],
+                    ticktext=["1", "10", "100", "1k", "10k", "100k", "1M"]
+                )
+            else:
+                fig = px.histogram(
+                    plot_df,
+                    x="Total Reflectivity (Linear Z)",
+                    color="Meteorite Name",
+                    nbins=nbins,
+                    title=f"Total Linear Reflectivity Histogram ({mode})",
+                    labels={
+                        "Total Reflectivity (Linear Z)": "Total Reflectivity (Linear Z, mm⁶/m³)",
+                        "count": "Number of Falls"
+                    },
+                    template="plotly_dark",
+                    hover_data={
+                        "Meteorite Name": True,
+                        "State/Province": True,
+                        "Date": True,
+                        "Time": True,
+                        "Category": True,
+                        "Total Reflectivity (Linear Z)": ":.4e"
+                    }
+                )
             
             # Improve visual layout
             fig.update_layout(
+                height=500,
                 margin=dict(l=40, r=40, t=50, b=40),
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
@@ -314,7 +345,10 @@ else:
             fig.update_xaxes(showgrid=True, gridcolor="#1E293B")
             fig.update_yaxes(showgrid=True, gridcolor="#1E293B")
             
-            st.plotly_chart(fig, use_container_width=True)
+            # Render using components.html to bypass version mismatch between Python Plotly 6.x and Streamlit's internal Plotly.js
+            import streamlit.components.v1 as components
+            html_str = fig.to_html(include_plotlyjs='cdn', full_html=False)
+            components.html(html_str, height=550, scrolling=False)
 
         # ----------------- Tables / Details Section -----------------
         st.markdown("<h3 class='section-title'>Meteorite Falls Data Details</h3>", unsafe_allow_html=True)
@@ -334,7 +368,7 @@ else:
                 lambda val: f"{val:.4e}" if pd.notna(val) else "N/A"
             )
             
-            st.dataframe(display_df, use_container_width=True)
+            st.dataframe(display_df.reset_index(drop=True), use_container_width=True)
             
         with tab2:
             missing_df = df[df["Total Reflectivity (Linear Z)"].isna()].copy()
@@ -345,4 +379,4 @@ else:
                 display_missing = missing_df[[
                     "Meteorite Name", "State/Province", "Date", "Time", "Category", "Folder Path"
                 ]]
-                st.dataframe(display_missing, use_container_width=True)
+                st.dataframe(display_missing.reset_index(drop=True), use_container_width=True)
