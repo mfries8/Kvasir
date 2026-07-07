@@ -140,6 +140,29 @@ def load_fall_data(root_dir):
             if radar_path:
                 total_reflectivity = compute_total_reflectivity(radar_path)
                 
+            # Parse event.json if it exists
+            event_path = os.path.join(dirpath, "event.json")
+            terminus_altitude = None
+            density = None
+            pre_atmospheric_mass = None
+            cosmic_velocity = None
+            toughness_index = None
+            has_event_data = False
+            
+            if os.path.exists(event_path):
+                try:
+                    with open(event_path, "r", encoding="utf-8") as ef:
+                        event_data = json.load(ef)
+                    has_event_data = True
+                    luminous_end = event_data.get("luminous_end", {})
+                    terminus_altitude = luminous_end.get("altitude_m")
+                    density = event_data.get("Meteorite Density (kg/m^3)")
+                    pre_atmospheric_mass = event_data.get("Pre-Atmospheric Mass (kg)")
+                    cosmic_velocity = event_data.get("Cosmic Velocity (km/s)")
+                    toughness_index = event_data.get("Toughness Index")
+                except Exception:
+                    pass
+                
             falls.append({
                 "Folder Name": dirname,
                 "State/Province": state_prov,
@@ -150,6 +173,12 @@ def load_fall_data(root_dir):
                 "Radar File": radar_filename,
                 "Radar Path": radar_path,
                 "Total Reflectivity (Linear Z)": total_reflectivity,
+                "Has Event Data": has_event_data,
+                "Terminus Altitude (altitude_m)": terminus_altitude,
+                "Density (kg/m^3)": density,
+                "Pre-Atmospheric Mass (kg)": pre_atmospheric_mass,
+                "Cosmic Velocity (km/s)": cosmic_velocity,
+                "Toughness Index": toughness_index,
                 "Folder Path": dirpath
             })
             
@@ -380,3 +409,34 @@ else:
                     "Meteorite Name", "State/Province", "Date", "Time", "Category", "Folder Path"
                 ]]
                 st.dataframe(display_missing.reset_index(drop=True), use_container_width=True)
+
+        # ----------------- Event Metadata Section -----------------
+        st.markdown("<h3 class='section-title'>Meteorite Event Metadata (from event.json)</h3>", unsafe_allow_html=True)
+        
+        # Filter for rows that have event data
+        event_df = df[df["Has Event Data"]].copy()
+        
+        if event_df.empty:
+            st.info("No event metadata available for this selection.")
+        else:
+            st.markdown("This table summarizes atmospheric flight and meteorite physical properties compiled from `event.json` in each fall directory.")
+            
+            # Select and rename columns for display
+            display_event_df = event_df[[
+                "Meteorite Name", "State/Province", "Category",
+                "Terminus Altitude (altitude_m)", "Density (kg/m^3)",
+                "Pre-Atmospheric Mass (kg)", "Cosmic Velocity (km/s)",
+                "Toughness Index"
+            ]].copy()
+            
+            # Rename columns to look professional
+            display_event_df = display_event_df.rename(columns={
+                "Terminus Altitude (altitude_m)": "Terminus Altitude (m)",
+                "Density (kg/m^3)": "Density (kg/m³)",
+                "Pre-Atmospheric Mass (kg)": "Pre-Atmospheric Mass (kg)",
+                "Cosmic Velocity (km/s)": "Cosmic Velocity (km/s)",
+                "Toughness Index": "Toughness Index"
+            })
+            
+            # Reset index to avoid index out of range bugs
+            st.dataframe(display_event_df.reset_index(drop=True), use_container_width=True)
