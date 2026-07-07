@@ -560,7 +560,11 @@ else:
                     hovermode="closest",
                     bargap=0.05
                 )
-                fig.update_xaxes(showgrid=True, gridcolor="#1E293B")
+                fig.update_xaxes(
+                    showgrid=True, 
+                    gridcolor="#1E293B",
+                    title_text=f"{st.session_state.hist_param} (Log₁₀ Scale)" if use_log else st.session_state.hist_param
+                )
                 fig.update_yaxes(showgrid=True, gridcolor="#1E293B")
                 
                 html_str = fig.to_html(include_plotlyjs='cdn', full_html=False)
