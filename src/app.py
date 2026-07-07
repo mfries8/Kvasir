@@ -148,18 +148,88 @@ def load_fall_data(root_dir):
             cosmic_velocity = None
             toughness_index = None
             has_event_data = False
+            event_id = None
             
             if os.path.exists(event_path):
                 try:
                     with open(event_path, "r", encoding="utf-8") as ef:
                         event_data = json.load(ef)
                     has_event_data = True
+                    event_id = event_data.get("event_id")
                     luminous_end = event_data.get("luminous_end", {})
                     terminus_altitude = luminous_end.get("altitude_m")
                     density = event_data.get("Meteorite Density (kg/m^3)")
                     pre_atmospheric_mass = event_data.get("Pre-Atmospheric Mass (kg)")
                     cosmic_velocity = event_data.get("Cosmic Velocity (km/s)")
                     toughness_index = event_data.get("Toughness Index")
+                except Exception:
+                    pass
+                
+            # Parse comprehensive.json if it exists
+            comp_path = os.path.join(dirpath, "comprehensive.json")
+            radar_det_dur = None
+            radar_det_dur_nexrad = None
+            radar_sum_kg = None
+            global_top_down_kg = None
+            max_size_stat_n1 = None
+            max_size_budget_radar = None
+            max_size_budget_global = None
+            median_offset_m = None
+            p90_radius_m = None
+            has_comp_data = False
+            
+            if os.path.exists(comp_path):
+                try:
+                    with open(comp_path, "r", encoding="utf-8") as cf:
+                        comp_data = json.load(cf)
+                    has_comp_data = True
+                    
+                    analysis_metadata = comp_data.get("analysis_metadata", {})
+                    radar_det_dur = analysis_metadata.get("radar_detection_duration_seconds")
+                    radar_det_dur_nexrad = analysis_metadata.get("radar_detection_duration_seconds_nexrad")
+                    
+                    forensics = comp_data.get("forensics", {})
+                    total_mass = forensics.get("total_mass_estimates", {})
+                    radar_sum_kg = total_mass.get("radar_sum_kg")
+                    global_top_down_kg = total_mass.get("global_top_down_kg")
+                    
+                    max_size = forensics.get("max_size_predictions_kg", {})
+                    max_size_stat_n1 = max_size.get("statistical_n1")
+                    max_size_budget_radar = max_size.get("budget_radar_based")
+                    max_size_budget_global = max_size.get("budget_global_based")
+                    
+                    rev_velocity = comp_data.get("reverse_velocity_cloud", {})
+                    median_offset_m = rev_velocity.get("median_offset_m")
+                    p90_radius_m = rev_velocity.get("p90_radius_m")
+                except Exception:
+                    pass
+                
+            # Check for reference b-slope in falls_b_slopes.json
+            b_slopes_path = r"C:\Users\warra\Desktop\MFries_files\repos\Jormungandr_Official\Jormungandr\refs\falls_b_slopes.json"
+            slope_val = None
+            r2_val = None
+            has_slope_data = False
+            
+            if os.path.exists(b_slopes_path):
+                try:
+                    with open(b_slopes_path, "r", encoding="utf-8") as bf:
+                        b_slopes_data = json.load(bf)
+                    
+                    name_key = meteorite_name.replace(" ", "")
+                    match_key = None
+                    if name_key in b_slopes_data:
+                        match_key = name_key
+                    elif event_id and event_id in b_slopes_data:
+                        match_key = event_id
+                        
+                    if match_key:
+                        has_slope_data = True
+                        entry = b_slopes_data[match_key]
+                        if isinstance(entry, dict):
+                            slope_val = entry.get("slope")
+                            r2_val = entry.get("r2")
+                        else:
+                            slope_val = entry
                 except Exception:
                     pass
                 
@@ -179,6 +249,19 @@ def load_fall_data(root_dir):
                 "Pre-Atmospheric Mass (kg)": pre_atmospheric_mass,
                 "Cosmic Velocity (km/s)": cosmic_velocity,
                 "Toughness Index": toughness_index,
+                "Has Comp Data": has_comp_data,
+                "Radar Detection Duration (s)": radar_det_dur,
+                "Radar Detection Duration NEXRAD (s)": radar_det_dur_nexrad,
+                "Radar Sum (kg)": radar_sum_kg,
+                "Global Top Down (kg)": global_top_down_kg,
+                "Max Size Stat N1 (kg)": max_size_stat_n1,
+                "Max Size Budget Radar (kg)": max_size_budget_radar,
+                "Max Size Budget Global (kg)": max_size_budget_global,
+                "Median Offset (m)": median_offset_m,
+                "P90 Radius (m)": p90_radius_m,
+                "Has Slope Data": has_slope_data,
+                "b-Slope": slope_val,
+                "R-Squared": r2_val,
                 "Folder Path": dirpath
             })
             
@@ -440,3 +523,67 @@ else:
             
             # Reset index to avoid index out of range bugs
             st.dataframe(display_event_df.reset_index(drop=True), use_container_width=True)
+
+        # ----------------- Comprehensive Metadata Section -----------------
+        st.markdown("<h3 class='section-title'>Meteorite Comprehensive Analysis (from comprehensive.json)</h3>", unsafe_allow_html=True)
+        
+        # Filter for rows that have comprehensive data
+        comp_df = df[df["Has Comp Data"]].copy()
+        
+        if comp_df.empty:
+            st.info("No comprehensive analysis metadata available for this selection.")
+        else:
+            st.markdown("This table summarizes advanced atmospheric flight modeling and mass distribution estimates compiled from `comprehensive.json`.")
+            
+            # Select and rename columns for display
+            display_comp_df = comp_df[[
+                "Meteorite Name", "State/Province", "Category",
+                "Radar Detection Duration (s)", "Radar Detection Duration NEXRAD (s)",
+                "Radar Sum (kg)", "Global Top Down (kg)",
+                "Max Size Stat N1 (kg)", "Max Size Budget Radar (kg)", "Max Size Budget Global (kg)",
+                "Median Offset (m)", "P90 Radius (m)"
+            ]].copy()
+            
+            # Format numeric columns to look professional (e.g. 2 decimal places or scientific)
+            for col in ["Radar Sum (kg)", "Global Top Down (kg)", "Max Size Stat N1 (kg)", 
+                        "Max Size Budget Radar (kg)", "Max Size Budget Global (kg)", 
+                        "Median Offset (m)", "P90 Radius (m)"]:
+                display_comp_df[col] = display_comp_df[col].apply(
+                    lambda val: f"{val:.2f}" if pd.notna(val) else "N/A"
+                )
+                
+            for col in ["Radar Detection Duration (s)", "Radar Detection Duration NEXRAD (s)"]:
+                display_comp_df[col] = display_comp_df[col].apply(
+                    lambda val: f"{val:.1f}" if pd.notna(val) else "N/A"
+                )
+            
+            # Reset index to avoid index out of range bugs
+            st.dataframe(display_comp_df.reset_index(drop=True), use_container_width=True)
+
+        # ----------------- B-Slope Section -----------------
+        st.markdown("<h3 class='section-title'>Meteorite b-Slope Estimates (from falls_b_slopes.json)</h3>", unsafe_allow_html=True)
+        
+        # Filter for rows that have slope data
+        slope_df = df[df["Has Slope Data"]].copy()
+        
+        if slope_df.empty:
+            st.info("No b-slope reference data available for this selection.")
+        else:
+            st.markdown("This table incorporates the b-slope power law exponents and their corresponding R² linear regression qualities.")
+            
+            # Select and rename columns for display
+            display_slope_df = slope_df[[
+                "Meteorite Name", "State/Province", "Category",
+                "b-Slope", "R-Squared"
+            ]].copy()
+            
+            # Format columns
+            display_slope_df["b-Slope"] = display_slope_df["b-Slope"].apply(
+                lambda val: f"{val:.4f}" if pd.notna(val) else "N/A"
+            )
+            display_slope_df["R-Squared"] = display_slope_df["R-Squared"].apply(
+                lambda val: f"{val:.4f}" if pd.notna(val) else "N/A"
+            )
+            
+            # Reset index to avoid index out of range bugs
+            st.dataframe(display_slope_df.reset_index(drop=True), use_container_width=True)
