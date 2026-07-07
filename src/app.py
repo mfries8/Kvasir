@@ -4,6 +4,7 @@ import json
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import streamlit.components.v1 as components
 
 # Page Configuration for a premium dark aesthetics look
 st.set_page_config(
@@ -56,6 +57,27 @@ FOLDER_PATTERN = re.compile(
     r"^([A-Za-z]{2,3})\s+(.+?)\s+(\d{1,2}\s+[A-Za-z]{3,9}\s+(?:\d{4}|\d{2}))\s+(\S+\s+UTC)$",
     re.IGNORECASE
 )
+
+# Mapping of user-friendly names to internal dataframe columns
+PARAM_MAP = {
+    "Total Reflectivity (Linear Z)": "Total Reflectivity (Linear Z)",
+    "Terminus Altitude (m)": "Terminus Altitude (altitude_m)",
+    "Density (kg/m³)": "Density (kg/m^3)",
+    "Pre-Atmospheric Mass (kg)": "Pre-Atmospheric Mass (kg)",
+    "Cosmic Velocity (km/s)": "Cosmic Velocity (km/s)",
+    "Toughness Index": "Toughness Index",
+    "Radar Detection Duration (s)": "Radar Detection Duration (s)",
+    "Radar Detection Duration NEXRAD (s)": "Radar Detection Duration NEXRAD (s)",
+    "Radar Sum (kg)": "Radar Sum (kg)",
+    "Global Top Down (kg)": "Global Top Down (kg)",
+    "Max Size Stat N1 (kg)": "Max Size Stat N1 (kg)",
+    "Max Size Budget Radar (kg)": "Max Size Budget Radar (kg)",
+    "Max Size Budget Global (kg)": "Max Size Budget Global (kg)",
+    "Median Offset (m)": "Median Offset (m)",
+    "P90 Radius (m)": "P90 Radius (m)",
+    "b-Slope": "b-Slope",
+    "R-Squared": "R-Squared"
+}
 
 def compute_total_reflectivity(radar_path):
     """
@@ -321,6 +343,19 @@ else:
             
         df = pd.DataFrame(filtered_falls)
         
+        # Initialize session state variables for dynamic plots
+        if "hist_param" not in st.session_state:
+            st.session_state.hist_param = "Total Reflectivity (Linear Z)"
+        if "hist_bins" not in st.session_state:
+            st.session_state.hist_bins = 20
+        if "hist_log" not in st.session_state:
+            st.session_state.hist_log = True
+
+        if "xy_x" not in st.session_state:
+            st.session_state.xy_x = "Pre-Atmospheric Mass (kg)"
+        if "xy_y" not in st.session_state:
+            st.session_state.xy_y = "Radar Sum (kg)"
+            
         # ----------------- Metrics -----------------
         total_matching = len(df)
         with_radar = df["Total Reflectivity (Linear Z)"].notna().sum()
@@ -362,105 +397,227 @@ else:
                     <div class="metric-label">Known vs Probable</div>
                 </div>
             """, unsafe_allow_html=True)
-            
-        # ----------------- Graph Section -----------------
-        st.markdown("<h3 class='section-title'>Total Reflectivity Distribution Histogram</h3>", unsafe_allow_html=True)
+
+        # ----------------- Sidebar Control Layout -----------------
+        # Add options for log scale and bins in sidebar
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("<h3 style='color: #00FFCC; font-size: 16px;'>Histogram Controls</h3>", unsafe_allow_html=True)
         
-        # Filter for data points containing valid radar reflectivity
-        plot_df = df[df["Total Reflectivity (Linear Z)"].notna()].copy()
+        param_list = list(PARAM_MAP.keys())
+        default_hist_idx = param_list.index(st.session_state.hist_param) if st.session_state.hist_param in param_list else 0
+        
+        selected_hist_param = st.sidebar.selectbox(
+            "Select Histogram Parameter:",
+            options=param_list,
+            index=default_hist_idx,
+            help="Choose which variable to bin in the histogram"
+        )
+        
+        selected_hist_log = st.sidebar.checkbox(
+            "Use Logarithmic Axis",
+            value=st.session_state.hist_log,
+            help="Apply log10 scaling to positive values of the selected parameter"
+        )
+        
+        selected_hist_bins = st.sidebar.slider(
+            "Number of Bins:",
+            min_value=5,
+            max_value=50,
+            value=st.session_state.hist_bins,
+            step=1
+        )
+        
+        if st.sidebar.button("Compute Histogram"):
+            st.session_state.hist_param = selected_hist_param
+            st.session_state.hist_bins = selected_hist_bins
+            st.session_state.hist_log = selected_hist_log
+            st.rerun()
+
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("<h3 style='color: #00FFCC; font-size: 16px;'>Graph Controls (X-Y Plot)</h3>", unsafe_allow_html=True)
+        
+        default_xy_x_idx = param_list.index(st.session_state.xy_x) if st.session_state.xy_x in param_list else 0
+        default_xy_y_idx = param_list.index(st.session_state.xy_y) if st.session_state.xy_y in param_list else 0
+        
+        selected_xy_x = st.sidebar.selectbox(
+            "Select X Axis Parameter:",
+            options=param_list,
+            index=default_xy_x_idx,
+            help="Independent variable for the scatter plot"
+        )
+        
+        selected_xy_y = st.sidebar.selectbox(
+            "Select Y Axis Parameter:",
+            options=param_list,
+            index=default_xy_y_idx,
+            help="Dependent variable for the scatter plot"
+        )
+        
+        if st.sidebar.button("Compute Graph"):
+            st.session_state.xy_x = selected_xy_x
+            st.session_state.xy_y = selected_xy_y
+            st.rerun()
+            
+        # ----------------- Histogram Section -----------------
+        st.markdown(f"<h3 class='section-title'>Histogram: {st.session_state.hist_param} Distribution</h3>", unsafe_allow_html=True)
+        
+        hist_col = PARAM_MAP[st.session_state.hist_param]
+        # Filter for data points containing valid values
+        plot_df = df[df[hist_col].notna()].copy()
         
         if plot_df.empty:
-            st.info("No radar reflectivity data available to plot in this selection.")
+            st.info(f"No valid data points available to plot for {st.session_state.hist_param} in this selection.")
         else:
-            # Add options for log scale and bins in sidebar
-            st.sidebar.markdown("---")
-            st.sidebar.markdown("<h3 style='color: #00FFCC; font-size: 16px;'>Histogram Controls</h3>", unsafe_allow_html=True)
-            
-            use_log = st.sidebar.checkbox(
-                "Use Logarithmic Reflectivity Axis", 
-                value=True,
-                help="Recommended since linear radar reflectivity spans multiple orders of magnitude"
-            )
-            
-            nbins = st.sidebar.slider(
-                "Number of Bins:",
-                min_value=5,
-                max_value=50,
-                value=20,
-                step=1
-            )
-            
-            # Generate the histogram
             import math
+            bins = st.session_state.hist_bins
+            use_log = st.session_state.hist_log
+            
             if use_log:
                 # Pre-calculate log10 values in Python to avoid Plotly's log(0) = -inf rendering bug
-                plot_df["Log10 Reflectivity"] = plot_df["Total Reflectivity (Linear Z)"].apply(
-                    lambda val: math.log10(val) if val > 0 else 0.0
+                plot_df["Log10 Plot Value"] = plot_df[hist_col].apply(
+                    lambda val: math.log10(val) if (pd.notna(val) and val > 0) else None
                 )
-                fig = px.histogram(
-                    plot_df,
-                    x="Log10 Reflectivity",
-                    color="Meteorite Name",
-                    nbins=nbins,
-                    title=f"Total Linear Reflectivity Histogram ({mode})",
-                    labels={
-                        "Log10 Reflectivity": "Total Reflectivity (Z, mm⁶/m³)",
-                        "count": "Number of Falls"
-                    },
-                    template="plotly_dark",
-                    hover_data={
-                        "Meteorite Name": True,
-                        "State/Province": True,
-                        "Date": True,
-                        "Time": True,
-                        "Category": True,
-                        "Total Reflectivity (Linear Z)": ":.4e"
-                    }
-                )
-                # Map the linear log10 axis to readable tick marks
-                fig.update_xaxes(
-                    tickvals=[0, 1, 2, 3, 4, 5, 6],
-                    ticktext=["1", "10", "100", "1k", "10k", "100k", "1M"]
-                )
+                plot_df = plot_df[plot_df["Log10 Plot Value"].notna()].copy()
+                
+            if plot_df.empty:
+                st.info(f"No positive data points available for logarithmic plot of {st.session_state.hist_param}.")
             else:
-                fig = px.histogram(
-                    plot_df,
-                    x="Total Reflectivity (Linear Z)",
-                    color="Meteorite Name",
-                    nbins=nbins,
-                    title=f"Total Linear Reflectivity Histogram ({mode})",
-                    labels={
-                        "Total Reflectivity (Linear Z)": "Total Reflectivity (Linear Z, mm⁶/m³)",
-                        "count": "Number of Falls"
-                    },
-                    template="plotly_dark",
-                    hover_data={
-                        "Meteorite Name": True,
-                        "State/Province": True,
-                        "Date": True,
-                        "Time": True,
-                        "Category": True,
-                        "Total Reflectivity (Linear Z)": ":.4e"
-                    }
+                if use_log:
+                    fig = px.histogram(
+                        plot_df,
+                        x="Log10 Plot Value",
+                        color="Meteorite Name",
+                        nbins=bins,
+                        title=f"{st.session_state.hist_param} Distribution ({mode}) - Log₁₀ Scale",
+                        labels={
+                            "Log10 Plot Value": f"Log₁₀({st.session_state.hist_param})",
+                            "count": "Number of Falls"
+                        },
+                        template="plotly_dark",
+                        hover_data={
+                            "Meteorite Name": True,
+                            "State/Province": True,
+                            "Date": True,
+                            "Time": True,
+                            "Category": True,
+                            hist_col: True
+                        }
+                    )
+                    
+                    min_val = plot_df["Log10 Plot Value"].min()
+                    max_val = plot_df["Log10 Plot Value"].max()
+                    start_tick = int(math.floor(min_val))
+                    end_tick = int(math.ceil(max_val))
+                    tick_vals = list(range(start_tick, end_tick + 1))
+                    
+                    tick_text = []
+                    for t in tick_vals:
+                        val = 10**t
+                        if val >= 1000000:
+                            tick_text.append(f"{val:.0e}")
+                        elif val >= 1000:
+                            tick_text.append(f"{val/1000:.0f}k")
+                        elif val >= 1:
+                            tick_text.append(f"{val:.0f}")
+                        elif val > 0:
+                            tick_text.append(f"{val:.4g}")
+                        else:
+                            tick_text.append("0")
+                            
+                    fig.update_xaxes(
+                        tickvals=tick_vals,
+                        ticktext=tick_text
+                    )
+                else:
+                    fig = px.histogram(
+                        plot_df,
+                        x=hist_col,
+                        color="Meteorite Name",
+                        nbins=bins,
+                        title=f"{st.session_state.hist_param} Distribution ({mode}) - Linear Scale",
+                        labels={
+                            hist_col: st.session_state.hist_param,
+                            "count": "Number of Falls"
+                        },
+                        template="plotly_dark",
+                        hover_data={
+                            "Meteorite Name": True,
+                            "State/Province": True,
+                            "Date": True,
+                            "Time": True,
+                            "Category": True,
+                            hist_col: True
+                        }
+                    )
+                
+                # Improve visual layout
+                fig.update_layout(
+                    height=500,
+                    margin=dict(l=40, r=40, t=50, b=40),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    legend_title_text="Fall Name",
+                    hovermode="closest",
+                    bargap=0.05
                 )
+                fig.update_xaxes(showgrid=True, gridcolor="#1E293B")
+                fig.update_yaxes(showgrid=True, gridcolor="#1E293B")
+                
+                html_str = fig.to_html(include_plotlyjs='cdn', full_html=False)
+                components.html(html_str, height=550, scrolling=False)
+
+        # ----------------- X-Y Plot Section -----------------
+        st.markdown(f"<h3 class='section-title'>X-Y Graph: {st.session_state.xy_y} vs {st.session_state.xy_x}</h3>", unsafe_allow_html=True)
+        
+        x_col = PARAM_MAP[st.session_state.xy_x]
+        y_col = PARAM_MAP[st.session_state.xy_y]
+        
+        # Filter for rows that have valid data for both X and Y
+        xy_df = df[df[x_col].notna() & df[y_col].notna()].copy()
+        
+        if xy_df.empty:
+            st.info(f"No valid data points available where both {st.session_state.xy_x} and {st.session_state.xy_y} are defined.")
+        else:
+            st.markdown(f"This scatter plot visualizes the correlation between **{st.session_state.xy_x}** (X-Axis) and **{st.session_state.xy_y}** (Y-Axis).")
             
-            # Improve visual layout
-            fig.update_layout(
+            fig_xy = px.scatter(
+                xy_df,
+                x=x_col,
+                y=y_col,
+                color="Meteorite Name",
+                title=f"{st.session_state.xy_y} vs {st.session_state.xy_x} ({mode})",
+                labels={
+                    x_col: st.session_state.xy_x,
+                    y_col: st.session_state.xy_y
+                },
+                template="plotly_dark",
+                hover_data={
+                    "Meteorite Name": True,
+                    "State/Province": True,
+                    "Category": True,
+                    "Date": True,
+                    "Time": True,
+                    x_col: True,
+                    y_col: True
+                }
+            )
+            
+            fig_xy.update_layout(
                 height=500,
                 margin=dict(l=40, r=40, t=50, b=40),
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
                 legend_title_text="Fall Name",
-                hovermode="closest",
-                bargap=0.05
+                hovermode="closest"
             )
-            fig.update_xaxes(showgrid=True, gridcolor="#1E293B")
-            fig.update_yaxes(showgrid=True, gridcolor="#1E293B")
             
-            # Render using components.html to bypass version mismatch between Python Plotly 6.x and Streamlit's internal Plotly.js
-            import streamlit.components.v1 as components
-            html_str = fig.to_html(include_plotlyjs='cdn', full_html=False)
-            components.html(html_str, height=550, scrolling=False)
+            fig_xy.update_traces(marker=dict(size=12, line=dict(width=1, color="DarkSlateGrey")))
+            
+            fig_xy.update_xaxes(showgrid=True, gridcolor="#1E293B")
+            fig_xy.update_yaxes(showgrid=True, gridcolor="#1E293B")
+            
+            html_str_xy = fig_xy.to_html(include_plotlyjs='cdn', full_html=False)
+            components.html(html_str_xy, height=550, scrolling=False)
 
         # ----------------- Tables / Details Section -----------------
         st.markdown("<h3 class='section-title'>Meteorite Falls Data Details</h3>", unsafe_allow_html=True)
